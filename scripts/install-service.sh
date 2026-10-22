@@ -7,7 +7,7 @@ if [[ "$EUID" -ne 0 ]]; then
   printf '%s\n' 'Run this installer with sudo.' >&2
   exit 1
 fi
-for tool in node runuser systemctl curl sed install readlink realpath stat id ss; do
+for tool in runuser systemctl curl sed install readlink realpath stat id ss; do
   command -v "$tool" >/dev/null || { printf 'Missing command: %s\n' "$tool" >&2; exit 1; }
 done
 [[ -d /run/systemd/system ]] || { printf '%s\n' 'This installer needs Ubuntu with systemd running.' >&2; exit 1; }
@@ -15,7 +15,12 @@ done
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(realpath -- "${1:-$SCRIPT_DIR/..}")"
 SERVICE_USER="${2:-${SUDO_USER:-$(stat -c '%U' "$APP_DIR")}}"
-NODE_BIN="$(readlink -f -- "$(command -v node)")"
+selected_node="${NODE_BIN:-$(command -v node || true)}"
+if [[ -z "$selected_node" || ! -x "$selected_node" ]]; then
+  printf '%s\n' 'Node was not found under sudo. Pass your Node path: sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh' >&2
+  exit 1
+fi
+NODE_BIN="$(readlink -f -- "$selected_node")"
 SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
 if [[ "$SERVICE_USER" == root ]]; then
   printf '%s\n' 'Choose a non-root service user: sudo bash scripts/install-service.sh /path/to/project ubuntu' >&2
@@ -37,8 +42,18 @@ runuser -u "$SERVICE_USER" -- test -r "$APP_DIR/server/index.js" || {
   printf 'The user %s cannot read the project. Check parent directory permissions.\n' "$SERVICE_USER" >&2
   exit 1
 }
-runuser -u "$SERVICE_USER" -- "$NODE_BIN" -e 'if (+process.versions.node.split(".")[0] < 24) process.exit(1); require("node:sqlite")' || {
-  printf '%s\n' 'Install Node.js 24+ system-wide, accessible to the service user. Avoid an installation under /root/.nvm.' >&2
+node_version="$(runuser -u "$SERVICE_USER" -- "$NODE_BIN" -p 'process.versions.node')" || {
+  printf 'The service user %s cannot execute %s. Use a Node installation accessible to that user.\n' "$SERVICE_USER" "$NODE_BIN" >&2
+  exit 1
+}
+printf 'Service user: %s\nNode: v%s (%s)\n' "$SERVICE_USER" "$node_version" "$NODE_BIN"
+if (( ${node_version%%.*} < 24 )); then
+  printf '%s\n' 'This app requires Node.js 24+. sudo may be selecting a different version from your normal shell.' >&2
+  printf '%s\n' 'With Node 24+ selected in your normal shell, run: sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh' >&2
+  exit 1
+fi
+runuser -u "$SERVICE_USER" -- "$NODE_BIN" -e 'require("node:sqlite")' || {
+  printf 'Node v%s at %s could not load its built-in SQLite module. See the error above.\n' "$node_version" "$NODE_BIN" >&2
   exit 1
 }
 if ! systemctl is-active --quiet dbl && [[ -n "$(ss -H -ltn 'sport = :3001')" ]]; then
