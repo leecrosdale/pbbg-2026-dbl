@@ -105,6 +105,28 @@ test('real clients share a winner; originless clients are refused; restart prese
     assert.deepEqual(await (await fetch(`${url}/api/community`)).json(), community);
     const c = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin: url }); clients.push(c);
     assert.equal((await message(c, m => m.type === 'state')).round.alarms[0].status, 'activated');
+    // Exercise the real SSH command against the running server, without altering real data.
+    if (bounds.phase === 'live' && bounds.end - Date.now() > 300000) {
+      const resetState = message(c, m => m.type === 'state' && m.round.id !== round.id);
+      const command = spawn(process.execPath, ['scripts/restart-round.mjs'], {
+        env: { ...process.env, DATABASE_PATH: path }, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = '';
+      command.stdout.on('data', chunk => { output += chunk; });
+      command.stderr.on('data', chunk => { output += chunk; });
+      assert.equal((await once(command, 'exit'))[0], 0, output);
+      assert.match(output, /Fresh round started/);
+      const fresh = (await resetState).round;
+      assert.equal(fresh.alarms.length, 10);
+      assert.ok(fresh.alarms.every(alarm => alarm.status === 'disabled'));
+      assert.deepEqual(await (await fetch(`${url}/api/community`)).json(), community);
+      assert.equal((await (await fetch(`${url}/api/history`)).json())[0].endReason, 'admin_restart');
+      c.terminate();
+      await stop();
+      await start();
+      const d = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin: url }); clients.push(d);
+      assert.equal((await message(d, m => m.type === 'state')).round.id, fresh.id);
+    }
   } finally {
     for (const c of clients) c.terminate();
     if (server && server.exitCode === null) await stop();

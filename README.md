@@ -2,6 +2,8 @@
 
 A small cooperative browser game: ten alarms, one community, one daily chance to save them all.
 
+For production at **dbl.crosdale.dev**, follow [DEPLOY.md](DEPLOY.md). An Ubuntu systemd service and installer are included for your existing Nginx setup.
+
 ## Run locally
 
 Requires **Node.js 24+** (uses built-in SQLite).
@@ -13,7 +15,7 @@ npm run dev
 
 Open **http://localhost:5173**. Vite serves the PixiJS frontend and proxies WebSockets and API requests to the Node server on port 3001. Open two browser windows to see shared game state. “Try a practice round” runs a clearly labelled, local rehearsal with a first alarm immediately available; it does not affect the daily game or archive.
 
-Click **Sound off** on the alarm board to enable the rising-and-falling air-raid-style siren. It plays a brief preview, then sounds continuously while any alarm is active, stopping when all ringing alarms are saved or expire. The toggle also mutes it immediately. Sound works in practice mode too. Each page load starts muted so audio can be enabled by a browser-permitted user click.
+The rising-and-falling siren is **on by default**. Your first click or keypress silently unlocks browser audio; it sounds while an alarm is active and stops when all ringing alarms are saved or expire. The **Sound on** toggle mutes immediately. Turning sound back on plays a short preview. Sound also works in practice mode. Browsers may block audio until the first interaction.
 
 ```sh
 npm test
@@ -34,6 +36,8 @@ The production build is served at **http://127.0.0.1:3001**. For a remote deploy
 - The server owns the clock, checks deadlines on every submission, and persists schedules, outcomes, and winners to `data/game.sqlite`. A restart catches up elapsed alarms; it does not reschedule the round. Days when the server never ran do not produce invented archive rounds.
 
 ## Connection model
+
+Admins with SSH access can start a fresh round using `npm run admin:restart` from the deployed project folder as the service user. The live service must be running the updated server. It archives the previous round and preserves player records and statistics. See [DEPLOY.md](DEPLOY.md#admin-start-a-fresh-game-round) for the timing rules and usage. Restarting the Node process alone preserves the current round.
 
 Code entry is available only through an active same-origin WebSocket connection; there is no HTTP submission endpoint. Future codes and schedules are never sent to the browser. Submissions are rate-limited to one per second per connection, payloads are capped, and dead sockets are removed with heartbeat checks. The online count measures connected tabs.
 

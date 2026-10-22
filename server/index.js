@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Store } from './store.js';
 import { activateAlarm, advanceRound, createRound, publicRound, roundBounds } from './game.js';
+import { processAdminRestart } from './admin.js';
 
 const app = express();
 const server = createServer(app);
@@ -13,14 +14,15 @@ let round;
 
 function reconcile(now = Date.now()) {
   // Catch up rounds that elapsed during downtime before starting today's round.
-  if (!round || round.id !== roundBounds(now).id) {
+  if (!round || (round.dayId || round.id) !== roundBounds(now).id) {
     for (const old of store.unfinished()) {
       if (old.end <= now) { advanceRound(old, now); store.save(old); }
     }
     const bounds = roundBounds(now);
-    round = store.get(bounds.id) || createRound(bounds);
+    round = store.current(bounds.id) || createRound(bounds);
     advanceRound(round, now);
     store.save(round);
+    store.setCurrent(round);
     return true;
   }
   if (advanceRound(round, now)) { store.save(round); return true; }
@@ -121,7 +123,12 @@ wss.on('connection', (client, request) => {
   client.on('close', broadcast);
 });
 
-const ticker = setInterval(() => { if (reconcile()) broadcast(); }, 500);
+const ticker = setInterval(() => {
+  let changed = reconcile();
+  const restarted = processAdminRestart(store, round);
+  if (restarted) { round = restarted; changed = true; }
+  if (changed) broadcast();
+}, 500);
 const heartbeat = setInterval(() => {
   for (const client of wss.clients) {
     if (!client.alive) { client.terminate(); continue; }

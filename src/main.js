@@ -25,7 +25,7 @@ document.querySelector('#app').innerHTML = `
         <div class="board-header"><div class="round-name"><span class="live-tag" id="phase-tag"><span class="status-dot"></span> LIVE ROUND</span><span class="round-date" id="round-date">Connecting to the round…</span></div><div class="watchers"><span class="people-icon">♧</span><span id="player-count">—</span> here right now</div></div>
         <div class="practice-banner" id="practice-banner" hidden>YOU’RE IN PRACTICE MODE <span>A quick local round. The daily game keeps running.</span><button id="exit-practice">Back to live ${arrow}</button></div>
         <div class="alarm-scroll"><div class="alarm-stage" id="alarm-stage"><div id="pixi-board" aria-hidden="true"></div><div class="alarm-grid" id="alarm-grid"></div></div></div>
-        <div class="board-footer"><div class="legend"><span><i class="legend-dot disabled"></i>Waiting</span><span><i class="legend-dot ringing"></i>Ringing</span><span><i class="legend-dot activated"></i>Saved</span><span><i class="legend-dot destroyed"></i>Lost</span></div><div class="board-sound"><span class="schedule-note">UNPREDICTABLE BY DESIGN.</span><button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="false" title="Enable alarm sound">Sound off</button></div></div>
+        <div class="board-footer"><div class="legend"><span><i class="legend-dot disabled"></i>Waiting</span><span><i class="legend-dot ringing"></i>Ringing</span><span><i class="legend-dot activated"></i>Saved</span><span><i class="legend-dot destroyed"></i>Lost</span></div><div class="board-sound"><span class="schedule-note">UNPREDICTABLE BY DESIGN.</span><button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="true" title="Mute alarm sound. Playback unlocks after your first click or keypress.">Sound on</button></div></div>
       </section>
 
       <section class="under-board"><div class="action-panel" id="action-panel" aria-live="polite"></div><div class="progress-panel"><div class="eyebrow">SYSTEM INTEGRITY</div><div class="progress-head"><h2>Keep the signal alive.</h2><span><strong id="saved-count">0</strong><span class="out-of"> / 10</span></span></div><div class="progress-track" id="progress-track"></div><div class="progress-meta"><span id="progress-copy">Awaiting intervention.</span><span id="lost-count">0 lost</span></div></div></section>
@@ -40,19 +40,37 @@ document.querySelector('#app').innerHTML = `
 
 const $ = selector => document.querySelector(selector);
 const alarmSound = new AlarmSound();
+let unlockingAudio = false;
+async function unlockAlarmAudio(event) {
+  // Browsers need a user gesture. Unlock silently so quiet rounds stay quiet.
+  if (event.target instanceof Element && event.target.closest('#sound-toggle')) return;
+  if (!alarmSound.enabled || unlockingAudio || alarmSound.context?.state === 'running') return;
+  unlockingAudio = true;
+  try {
+    await alarmSound.unlock();
+    $('#sound-toggle').title = 'Mute alarm sound';
+    alarmSound.update(alarmSound.ringing);
+  } catch {
+    $('#sound-toggle').title = 'Sound is on. Click or press a key to allow browser audio.';
+  } finally { unlockingAudio = false; }
+}
+document.addEventListener('click', unlockAlarmAudio);
+document.addEventListener('keydown', unlockAlarmAudio);
 $('#sound-toggle').addEventListener('click', async () => {
   const button = $('#sound-toggle');
   button.disabled = true;
   try {
     if (alarmSound.enabled) alarmSound.disable();
     else await alarmSound.enable();
-    button.textContent = alarmSound.enabled ? 'Sound on' : 'Sound off';
-    button.setAttribute('aria-pressed', String(alarmSound.enabled));
-    button.title = alarmSound.enabled ? 'Mute alarm sound' : 'Enable alarm sound';
   } catch (error) {
     alarmSound.disable();
     toast(error.message);
-  } finally { button.disabled = false; }
+  } finally {
+    button.textContent = alarmSound.enabled ? 'Sound on' : 'Sound off';
+    button.setAttribute('aria-pressed', String(alarmSound.enabled));
+    button.title = alarmSound.enabled ? 'Mute alarm sound' : 'Enable alarm sound';
+    button.disabled = false;
+  }
 });
 window.addEventListener('pagehide', () => alarmSound.stop());
 let liveState = null;
@@ -281,7 +299,7 @@ document.querySelectorAll('[data-view]').forEach(button => button.addEventListen
     try {
       const response = await fetch('/api/history'); if (!response.ok) throw new Error();
       const rounds = await response.json();
-      $('#archive-content').innerHTML = rounds.length ? `<div class="archive-table"><div class="archive-row archive-table-head"><span>ROUND ENDING</span><span>SAVED</span><span>LOST</span><span>THE VERDICT</span></div>${rounds.map(r => `<div class="archive-row"><span>${ukDate(r.end)}</span><strong>${r.activated} / 10</strong><span>${r.destroyed}</span><span class="verdict">${r.activated === 10 ? 'A perfect ten.' : r.activated >= 5 ? 'Time well spent.' : 'We’ll be back.'}</span></div>`).join('')}</div>` : '<div class="archive-empty"><span class="empty-clock">◷</span><h2>A little history in the making.</h2><p>Our first results will appear here when a round finishes at midday UK time.</p><button class="text-button" id="return-live">Back to the game →</button></div>';
+      $('#archive-content').innerHTML = rounds.length ? `<div class="archive-table"><div class="archive-row archive-table-head"><span>ROUND ENDING</span><span>SAVED</span><span>LOST</span><span>THE VERDICT</span></div>${rounds.map(r => `<div class="archive-row"><span>${ukDate(r.end)}</span><strong>${r.activated} / 10</strong><span>${r.destroyed}</span><span class="verdict">${r.endReason === 'admin_restart' ? 'Restarted by admin.' : r.activated === 10 ? 'A perfect ten.' : r.activated >= 5 ? 'Time well spent.' : 'We’ll be back.'}</span></div>`).join('')}</div>` : '<div class="archive-empty"><span class="empty-clock">◷</span><h2>A little history in the making.</h2><p>Our first results will appear here when a round finishes at midday UK time.</p><button class="text-button" id="return-live">Back to the game →</button></div>';
       $('#return-live')?.addEventListener('click', () => $('[data-view="live"]').click());
     } catch { $('#archive-content').innerHTML = '<p class="archive-empty">The record book is unavailable. Please try again in a moment.</p>'; }
   } else { requestAnimationFrame(drawBoard); }

@@ -12,6 +12,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA busy_timeout = 5000;
       PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS rounds (
         id TEXT PRIMARY KEY,
@@ -35,6 +36,18 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS saves_player ON saves(player_id);
       CREATE INDEX IF NOT EXISTS saves_time ON saves(saved_at DESC);
+      CREATE TABLE IF NOT EXISTS active_rounds (
+        day_id TEXT PRIMARY KEY,
+        round_id TEXT NOT NULL REFERENCES rounds(id)
+      );
+      CREATE TABLE IF NOT EXISTS admin_actions (
+        id TEXT PRIMARY KEY,
+        expected_round_id TEXT NOT NULL,
+        requested_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        message TEXT
+      );
     `);
   }
   get(id) {
@@ -45,6 +58,46 @@ export class Store {
     this.db.prepare(`INSERT INTO rounds (id, state, finished) VALUES (?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET state = excluded.state, finished = excluded.finished`)
       .run(round.id, JSON.stringify(round), round.completedAt ? 1 : 0);
+  }
+  current(dayId) {
+    const active = this.db.prepare('SELECT round_id FROM active_rounds WHERE day_id = ?').get(dayId);
+    return this.get(active?.round_id || dayId);
+  }
+  setCurrent(round) {
+    this.db.prepare(`INSERT INTO active_rounds (day_id, round_id) VALUES (?, ?)
+      ON CONFLICT(day_id) DO UPDATE SET round_id = excluded.round_id`).run(round.dayId || round.id, round.id);
+  }
+  requestAdminRestart(roundId, now = Date.now()) {
+    const id = randomUUID();
+    this.db.prepare('INSERT INTO admin_actions (id, expected_round_id, requested_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(id, roundId, now, now + 10000);
+    return id;
+  }
+  adminAction(id) {
+    return this.db.prepare('SELECT * FROM admin_actions WHERE id = ?').get(id);
+  }
+  nextAdminAction() {
+    return this.db.prepare("SELECT * FROM admin_actions WHERE status = 'pending' ORDER BY requested_at, id LIMIT 1").get();
+  }
+  failAdminAction(id, message) {
+    return this.db.prepare("UPDATE admin_actions SET status = 'failed', message = ? WHERE id = ? AND status = 'pending'").run(message, id);
+  }
+  finishAdminRestart(id, archived, next, now) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const action = this.adminAction(id);
+      if (action?.status !== 'pending' || action.expires_at <= now) {
+        this.db.exec('ROLLBACK');
+        return false;
+      }
+      this.save(archived);
+      this.save(next);
+      this.setCurrent(next);
+      this.db.prepare("UPDATE admin_actions SET status = 'completed', message = ? WHERE id = ?")
+        .run(`Fresh round started: ${next.id}. Player records and history were preserved.`, id);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   unfinished() {
     return this.db.prepare('SELECT state FROM rounds WHERE finished = 0').all().map(row => JSON.parse(row.state));
@@ -57,6 +110,7 @@ export class Store {
           id: round.id, end: round.end,
           activated: round.alarms.filter(a => a.status === 'activated').length,
           destroyed: round.alarms.filter(a => a.status === 'destroyed').length,
+          ...(round.endReason ? { endReason: round.endReason } : {}),
         };
       });
   }

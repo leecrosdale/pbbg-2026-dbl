@@ -1,17 +1,21 @@
 // Synthesised locally: no audio downloads or external services are needed.
 export class AlarmSound {
   context = null;
-  enabled = false;
+  enabled = true;
   sources = new Set();
   ringing = false;
   previewTimer = null;
 
-  async enable() {
+  async unlock() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) throw new Error('Audio is unavailable in this browser.');
     this.context ||= new AudioContext();
-    await this.context.resume();
+    if (this.context.state !== 'running') await this.context.resume();
     if (this.context.state !== 'running') throw new Error('Audio could not start. Please try again.');
+  }
+
+  async enable() {
+    await this.unlock();
     this.enabled = true;
     // A short preview confirms that sound is working.
     this.start();

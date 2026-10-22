@@ -1,0 +1,32 @@
+[Unit]
+Description=Don't Be Late multiplayer alarm game
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@APP_DIR@
+ExecStart=@NODE_BIN@ @APP_DIR@/server/index.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+Environment=DATABASE_PATH=@APP_DIR@/data/game.sqlite
+Environment=ALLOWED_ORIGINS=https://dbl.crosdale.dev
+Environment=SESSION_COOKIE_SECURE=true
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGTERM
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=@APP_DIR@/data
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
