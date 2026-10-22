@@ -4,7 +4,7 @@ The application runs as a single Node.js process under systemd. Your existing Ng
 
 ## Install
 
-Requires Ubuntu with systemd, Node.js **24+** and npm. Use a normal deployment user who can read the project and execute Node. A system-wide Node installation works, as does an NVM installation owned by the service user when its absolute path is passed to the installer. Node under `/root/.nvm` will not work for another user. See [Node's official downloads](https://nodejs.org/en/download) for installation options.
+Requires Ubuntu with systemd, Node.js **22.13+** and npm. Use a normal deployment user who can read the project and execute Node. A system-wide Node installation works, as does an NVM installation owned by the service user when its absolute path is passed to the installer. Node under `/root/.nvm` will not work for another user. See [Node's official downloads](https://nodejs.org/en/download) for installation options.
 
 From the project directory, as your normal deployment user:
 
@@ -27,7 +27,7 @@ node --version
 sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh
 ```
 
-The first command must report v24 or newer. The installer reports the exact selected version, executable and service user, and records the absolute path in the service. systemd does not need to load NVM. If that Node version is subsequently removed or moved, rerun the installer with the new executable path.
+The first command must report v22.13 or newer. The installer reports the exact selected version, executable and service user, and records the absolute path in the service. systemd does not need to load NVM. If that Node version is subsequently removed or moved, rerun the installer with the new executable path.
 
 The installer defaults to the project containing the script and the user who invoked sudo. You can provide both explicitly; replace this path and username with yours:
 
@@ -143,7 +143,7 @@ Use an existing private backup directory writable by your deployment user. If ar
 ## Troubleshooting
 
 - **Port 3001 in use:** stop your manually started app first. Inspect the listener with `sudo ss -ltnp 'sport = :3001'`.
-- **Node not found or too old under sudo:** compare `node --version` with `sudo node --version`. If your normal shell has Node 24+, use `sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh` to select it explicitly. The selected service user must be able to run that executable.
+- **Node not found or too old under sudo:** compare `node --version` with `sudo node --version`. If your normal shell has Node 22.13+, use `sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh` to select it explicitly. The selected service user must be able to run that executable.
 - **Permission denied:** the service user must be able to traverse parent directories and read source, dependencies and build output. Avoid placing the project under `/root`.
 - **Public 404 but local health works:** check that Nginx proxies `/api/` and `/ws` as well as `/`.
 - **WebSocket 403:** use exactly `https://dbl.crosdale.dev` and preserve the browser's `Origin` header.

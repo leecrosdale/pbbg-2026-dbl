@@ -6,7 +6,7 @@ For production at **dbl.crosdale.dev**, follow [DEPLOY.md](DEPLOY.md). An Ubuntu
 
 ## Run locally
 
-Requires **Node.js 24+** (uses built-in SQLite).
+Requires **Node.js 22.13+** (uses built-in SQLite).
 
 ```sh
 npm install

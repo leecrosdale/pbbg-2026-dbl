@@ -47,9 +47,12 @@ node_version="$(runuser -u "$SERVICE_USER" -- "$NODE_BIN" -p 'process.versions.n
   exit 1
 }
 printf 'Service user: %s\nNode: v%s (%s)\n' "$SERVICE_USER" "$node_version" "$NODE_BIN"
-if (( ${node_version%%.*} < 24 )); then
-  printf '%s\n' 'This app requires Node.js 24+. sudo may be selecting a different version from your normal shell.' >&2
-  printf '%s\n' 'With Node 24+ selected in your normal shell, run: sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh' >&2
+node_major="${node_version%%.*}"
+node_remainder="${node_version#*.}"
+node_minor="${node_remainder%%.*}"
+if (( node_major < 22 || (node_major == 22 && node_minor < 13) )); then
+  printf '%s\n' 'This app requires Node.js 22.13+ for built-in SQLite without an experimental flag. sudo may be selecting a different version from your normal shell.' >&2
+  printf '%s\n' 'Select your supported Node executable: sudo env NODE_BIN="$(command -v node)" bash scripts/install-service.sh' >&2
   exit 1
 fi
 runuser -u "$SERVICE_USER" -- "$NODE_BIN" -e 'require("node:sqlite")' || {
